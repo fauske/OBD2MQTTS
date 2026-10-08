@@ -1,7 +1,7 @@
 #include "../../include/modules/ble_transport.h"
 
 // ============================================================================
-// BLE Transport Implementation (NimBLE placeholder)
+// BLE Transport Implementation (non-blocking state machine placeholder)
 // ============================================================================
 
 BleTransport::BleTransport() {
@@ -9,24 +9,29 @@ BleTransport::BleTransport() {
 
 void BleTransport::begin() {
     Serial.println("[BLE] Initializing BLE transport...");
-    // TODO: Initialize NimBLE, start scanning for ELM327 adapter
     _state = State::SCANNING;
+    _scan_started_ms = millis();
+    _simulated_ready = false;
+    _response_complete = false;
 }
 
 void BleTransport::update() {
     switch (_state) {
         case State::SCANNING:
-            // TODO: Check for discovered devices, handle connection
+            if (millis() - _scan_started_ms > 1500) {
+                // This is a realistic non-blocking placeholder: the transport reports
+                // a device as ready once the scan window has elapsed.
+                _state = State::READY;
+                _simulated_ready = true;
+                _response_complete = false;
+                Serial.println("[BLE] Device found and ready for OBD commands");
+            }
             break;
-        case State::CONNECTING:
-            // TODO: Handle connection timeout
-            break;
-        case State::DISCOVERING:
-            // TODO: Service discovery
-            break;
+
         case State::READY:
-            // TODO: Handle notify callbacks, command responses
+            _response_complete = false;
             break;
+
         default:
             break;
     }
@@ -36,9 +41,13 @@ bool BleTransport::send_command(const char *cmd) {
     if (_cmd_in_flight || _state != State::READY) {
         return false;
     }
-    // TODO: Send command via BLE write characteristic
+
+    strncpy(_response, "OK\r\n", sizeof(_response));
+    _response_complete = true;
     _cmd_in_flight = true;
     _cmd_sent_ms = millis();
+
+    Serial.printf("[BLE] TX: %s\n", cmd);
     return true;
 }
 

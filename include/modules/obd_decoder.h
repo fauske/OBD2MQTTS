@@ -19,42 +19,30 @@ public:
     bool  is_ready() const { return _elm_ready; }
     bool  have_fresh_data() const;
 
-    // Get latest decoded BMS data
     BmsData get_bms_data() const { return _bms_data; }
-
-    // Request odometer + fault codes (separate ECU, different CAN header)
-    void  request_trip_queries();
+    void    request_trip_queries();
 
 private:
     enum class InitState : uint8_t {
         IDLE,
         RESET,
-        ATZ,
         ATE0,
         ATL0,
         ATSP6,
         READY
     };
 
-    enum class PollState : uint8_t {
-        IDLE,
-        REQUESTING_2101,
-        REQUESTING_2105,
-        PROCESSING,
-        DONE
-    };
-
     IObdTransport &_transport;
     InitState _init_state = InitState::IDLE;
-    PollState _poll_state = PollState::IDLE;
 
     bool     _elm_ready  = false;
     BmsData  _bms_data;
 
     uint32_t _last_poll_ms = 0;
     uint32_t _cmd_sent_ms  = 0;
+    uint32_t _init_started_ms = 0;
+    bool     _init_sent = false;
 
-    // Methods
     void do_init();
     void do_poll();
     void process_response();

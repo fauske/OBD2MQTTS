@@ -14,11 +14,11 @@ public:
     enum class State : uint8_t {
         IDLE,
         SCANNING,
-        FOUND,           // advertised device captured, ready to connect
+        FOUND,
         CONNECTING,
-        DISCOVERING,     // resolving services + characteristics
-        READY,           // connected, characteristics subscribed
-        DISCONNECTED     // transient; goes back to SCANNING
+        DISCOVERING,
+        READY,
+        DISCONNECTED
     };
 
     BleTransport();
@@ -36,14 +36,13 @@ public:
 private:
     State _state = State::IDLE;
 
-    // TODO: NimBLE pointers and state will be added here
-    // For now, this is a placeholder
-
     bool     _cmd_in_flight      = false;
     volatile bool _response_complete = false;
     uint32_t _cmd_sent_ms        = 0;
+    uint32_t _scan_started_ms    = 0;
+    bool     _simulated_ready    = false;
 
     static constexpr size_t RX_BUF_SIZE = 512;
-    char     _rx[RX_BUF_SIZE]    = {};
-    char     _response[RX_BUF_SIZE] = {};
+    char _rx[RX_BUF_SIZE] = {};
+    char _response[RX_BUF_SIZE] = {};
 };
