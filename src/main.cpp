@@ -1,1 +1,80 @@
-#include <Arduino.h>\n#include <WiFi.h>\n#include <WiFiClientSecure.h>\n#include <PubSubClient.h>\n#include <ArduinoOTA.h>\n\n#include \"config.h\"\n#include \"ota_manager.h\"\n\n// WiFi client for MQTT\n#if MQTT_USE_TLS\nWiFiClientSecure wifiClient;\n#else\nWiFiClient wifiClient;\n#endif\n\nPubSubClient mqttClient(wifiClient);\nOtaManager ota;\n\nvoid setupMqttSecure() {\n#if MQTT_USE_TLS\n    // For MQTTS: set TLS parameters before connecting\n    \n    // Option 1: Skip server cert verification (encrypted but unverified)\n    // Use only for testing or private brokers you trust\n    if (strlen(MQTT_CA_CERT) == 0) {\n        Serial.println(\"[MQTT] TLS: server certificate verification DISABLED\");\n        wifiClient.setInsecure();\n    } else {\n        // Option 2: Verify server certificate using CA cert\n        // wifiClient.setCACert(MQTT_CA_CERT);\n        // For now, using setInsecure() — uncomment above for production\n        Serial.println(\"[MQTT] TLS: CA certificate loaded\");\n        wifiClient.setInsecure();\n    }\n#endif\n}\n\nvoid connectWiFi() {\n    WiFi.mode(WIFI_STA);\n    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);\n\n    Serial.print(\"[WiFi] Connecting to \");\n    Serial.print(WIFI_SSID);\n    Serial.print(\"...\");\n    \n    int attempts = 0;\n    while (WiFi.status() != WL_CONNECTED && attempts < 20) {\n        delay(500);\n        Serial.print(\".\");\n        attempts++;\n    }\n\n    Serial.println();\n    if (WiFi.status() == WL_CONNECTED) {\n        Serial.println(\"[WiFi] Connected\");\n        Serial.print(\"[WiFi] IP: \");\n        Serial.println(WiFi.localIP());\n    } else {\n        Serial.println(\"[WiFi] Failed to connect\");\n    }\n}\n\nvoid connectMqtt() {\n    if (WiFi.status() != WL_CONNECTED) {\n        Serial.println(\"[MQTT] WiFi not connected, skipping MQTT\");\n        return;\n    }\n\n    setupMqttSecure();\n    mqttClient.setServer(MQTT_HOST, MQTT_PORT);\n\n#if MQTT_USE_TLS\n    Serial.print(\"[MQTT] Connecting to \");\n    Serial.print(MQTT_HOST);\n    Serial.print(\":\" );\n    Serial.print(MQTT_PORT);\n    Serial.println(\" (MQTTS)\");\n#else\n    Serial.print(\"[MQTT] Connecting to \");\n    Serial.print(MQTT_HOST);\n    Serial.print(\":\" );\n    Serial.print(MQTT_PORT);\n    Serial.println(\" (plain)\");\n#endif\n\n    int attempts = 0;\n    while (!mqttClient.connected() && attempts < 5) {\n        if (mqttClient.connect(MQTT_CLIENT_ID, MQTT_USERNAME, MQTT_PASSWORD)) {\n            Serial.println(\"[MQTT] Connected\");\n            return;\n        } else {\n            Serial.print(\"[MQTT] Connection failed, rc=\");\n            Serial.println(mqttClient.state());\n            delay(2000);\n            attempts++;\n        }\n    }\n\n    if (!mqttClient.connected()) {\n        Serial.println(\"[MQTT] Failed to connect after retries\");\n    }\n}\n\nvoid setup() {\n    Serial.begin(SERIAL_BAUD);\n    delay(500);\n\n    Serial.println(\"\\n=== OBD2MQTTS booting ===\");\n\n    connectWiFi();\n\n    if (ENABLE_OTA) {\n        Serial.print(\"[OTA] Initializing on \");\n        Serial.print(OTA_HOSTNAME);\n        Serial.print(\":\" );\n        Serial.println(OTA_PORT);\n        ota.begin(OTA_HOSTNAME, OTA_PASSWORD, OTA_PORT);\n    }\n\n    if (ENABLE_MQTT) {\n        connectMqtt();\n    }\n\n    Serial.println(\"[Boot] Setup complete\\n\");\n}\n\nvoid loop() {\n    // Handle OTA updates\n    if (ENABLE_OTA && ota.isReady()) {\n        ota.handle();\n    }\n\n    // Reconnect MQTT if needed\n    if (ENABLE_MQTT) {\n        if (WiFi.status() == WL_CONNECTED && !mqttClient.connected()) {\n            connectMqtt();\n        }\n        \n        if (mqttClient.connected()) {\n            mqttClient.loop();\n        }\n    }\n\n    // Publish status on interval\n    static uint32_t lastReport = 0;\n    uint32_t now = millis();\n\n    if (now - lastReport >= REPORT_INTERVAL_MS) {\n        lastReport = now;\n\n        String payload = \"{\";\n        payload += \"\\\"device\\\":\\\"\" + String(DEVICE_NAME) + \"\\\"\";\n        payload += \",\\\"uptime_ms\\\":\" + String(now) + \"\";\n        payload += \",\\\"wifi_rssi\\\":\" + String(WiFi.RSSI()) + \"\";\n        payload += \",\\\"mqtt_connected\\\":\" + (mqttClient.connected() ? \"true\" : \"false\") + \"\";\n        payload += \"}\";\n\n        if (ENABLE_MQTT && mqttClient.connected()) {\n            bool success = mqttClient.publish(MQTT_TOPIC_STATUS, payload.c_str());\n            if (success) {\n                Serial.print(\"[MQTT] Published to \");\n                Serial.println(MQTT_TOPIC_STATUS);\n            } else {\n                Serial.println(\"[MQTT] Publish failed\");\n            }\n        } else {\n            Serial.println(\"[Status] (offline): \" + payload);\n        }\n    }\n\n    delay(50);\n}\n
+#include <Arduino.h>
+#include <WiFi.h>
+#include <WiFiClientSecure.h>
+#include <PubSubClient.h>
+#include <ArduinoOTA.h>
+
+#include "config.h"
+#include "data_store.h"
+#include "include/modules/ble_transport.h"
+#include "include/modules/obd_decoder.h"
+#include "include/modules/mqtt_publisher.h"
+#include "ota_manager.h"
+
+DataStore store;
+BleTransport ble;
+ObdDecoder obd(ble);
+MqttPublisher mqtt;
+OtaManager ota;
+
+void setup() {
+    Serial.begin(SERIAL_BAUD);
+    delay(500);
+
+    Serial.println("\n=== OBD2MQTTS boot ===");
+
+    // Start modules
+    ble.begin();
+    obd.begin();
+    mqtt.begin();
+
+    if (ENABLE_OTA) {
+        ota.begin(DEVICE_HOSTNAME, OTA_PASSWORD, OTA_PORT);
+    }
+
+    // WiFi should be connected before MQTT is available
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+    Serial.print("[WiFi] Connecting to ");
+    Serial.println(WIFI_SSID);
+    while (WiFi.status() != WL_CONNECTED) {
+        delay(500);
+        Serial.print(".");
+    }
+    Serial.println();
+    Serial.printf("[WiFi] Connected: %s\n", WiFi.localIP().toString().c_str());
+}
+
+void loop() {
+    // OTA first
+    if (ENABLE_OTA && ota.is_ready()) {
+        ota.handle();
+    }
+
+    // Pump modules
+    ble.update();
+    obd.update();
+    mqtt.update();
+
+    // Mirror status bits
+    store.set_ble_connected(ble.is_connected());
+    store.set_obd_ready(obd.is_ready());
+    store.set_mqtt_online(mqtt.is_online());
+
+    // Simple status sample
+    static uint32_t last_pub = 0;
+    if (millis() - last_pub > REPORT_INTERVAL_MS) {
+        last_pub = millis();
+
+        BmsData current = store.get_bms_data();
+        if (current.valid) {
+            mqtt.publish_telemetry(current);
+        }
+
+        SystemStatus status = store.get_status();
+        mqtt.publish_status(status);
+    }
+
+    delay(50);
+}
