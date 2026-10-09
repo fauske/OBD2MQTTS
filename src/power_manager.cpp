@@ -1,4 +1,5 @@
-#include "../../include/power_manager.h"
+#include "power_manager.h"
+#include "config.h"
 #include <esp_sleep.h>
 
 PowerManager::PowerManager() {
@@ -24,7 +25,7 @@ void PowerManager::update() {
 }
 
 bool PowerManager::ignition_on() const {
-    return _car_12v > IGNITION_ON_THRESHOLD;
+    return _car_12v > IGNITION_ON_THRESHOLD_V;
 }
 
 void PowerManager::read_voltages() {
@@ -48,7 +49,7 @@ void PowerManager::update_mode() {
         _ignition_off_time_ms = millis();
         if (millis() - _ignition_on_time_ms > IGNITION_DEBOUNCE_MS) {
             _ignition_was_on = false;
-            if (_car_12v > CHARGE_DETECT_12V) {
+            if (_car_12v > CHARGING_DETECT_THRESHOLD_V) {
                 _mode = Mode::AWAKE;
                 Serial.printf("[PWR] Mode -> AWAKE (charging, 12V=%.1f)\n", _car_12v);
             } else {
@@ -56,7 +57,7 @@ void PowerManager::update_mode() {
                 Serial.printf("[PWR] Mode -> MINIMAL (parked, 12V=%.1f)\n", _car_12v);
             }
         }
-    } else if (_mode == Mode::AWAKE && _car_12v < CHARGE_RELEASE_12V) {
+    } else if (_mode == Mode::AWAKE && _car_12v < CHARGING_RELEASE_THRESHOLD_V) {
         _mode = Mode::MINIMAL;
         Serial.printf("[PWR] Mode -> MINIMAL (charge ended, 12V=%.1f)\n", _car_12v);
     }

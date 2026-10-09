@@ -17,6 +17,15 @@ static void nimble_advertise_callback(NimBLEAdvertisedDevice *dev) {
     }
 }
 
+class AdvertisedDeviceCallback : public NimBLEAdvertisedDeviceCallbacks {
+public:
+    void onResult(NimBLEAdvertisedDevice *dev) override {
+        nimble_advertise_callback(dev);
+    }
+};
+
+static AdvertisedDeviceCallback g_advertised_device_cb;
+
 class ClientCallback : public NimBLEClientCallbacks {
 public:
     void onConnect(NimBLEClient *pClient) override {
@@ -34,18 +43,6 @@ public:
 
 static ClientCallback g_client_cb;
 
-class NotifyCallback : public NimBLECharacteristicCallbacks {
-public:
-    void onNotify(NimBLERemoteCharacteristic *pChar) override {
-        std::string data = pChar->getValue();
-        if (g_ble_instance && data.length() > 0) {
-            g_ble_instance->onNotify((uint8_t *)data.data(), data.length());
-        }
-    }
-};
-
-static NotifyCallback g_notify_cb;
-
 // ============================================================================
 // BleTransport Implementation
 // ============================================================================
@@ -56,7 +53,7 @@ BleTransport::BleTransport() {
 
 BleTransport::~BleTransport() {
     if (_client) {
-        delete _client;
+        NimBLEDevice::deleteClient(_client);
     }
 }
 
@@ -67,7 +64,7 @@ void BleTransport::begin() {
     NimBLEDevice::setPower(ESP_PWR_LVL_P9, ESP_BLE_PWR_TYPE_DEFAULT);
 
     NimBLEScan *pScan = NimBLEDevice::getScan();
-    pScan->setAdvertisedDeviceCallbacks(&g_client_cb, false);
+    pScan->setAdvertisedDeviceCallbacks(&g_advertised_device_cb, false);
     pScan->setInterval(100);
     pScan->setWindow(99);
     pScan->setActiveScan(true);
@@ -139,7 +136,7 @@ void BleTransport::do_connect() {
             _connect_attempts++;
             if (_connect_attempts > 3) {
                 Serial.println("[BLE] Connect failed after retries");
-                delete _client;
+                NimBLEDevice::deleteClient(_client);
                 _client = nullptr;
                 _state = State::SCANNING;
                 _scan_started_ms = millis();
@@ -183,7 +180,15 @@ bool BleTransport::discover_characteristics() {
         }
 
         if (_notify_char->canNotify()) {
-            _notify_char->registerForNotify(&g_notify_cb, false);
+            _notify_char->subscribe(true,
+                [](NimBLERemoteCharacteristic *characteristic, uint8_t *data,
+                   size_t length, bool is_notify) {
+                    (void)characteristic;
+                    (void)is_notify;
+                    if (g_ble_instance && data && length > 0) {
+                        g_ble_instance->onNotify(data, length);
+                    }
+                });
         }
 
         return true;
@@ -205,7 +210,8 @@ bool BleTransport::send_command(const char *cmd) {
     try {
         std::string cmdbuf = cmd;
         cmdbuf += "\r\n";
-        _write_char->writeValue((uint8_t *)cmdbuf.c_str(), cmdbuf.length());
+        _write_char->writeValue(
+            reinterpret_cast<const uint8_t *>(cmdbuf.data()), cmdbuf.length());
         _cmd_in_flight = true;
         _cmd_sent_ms = millis();
         _response_complete = false;

@@ -1,5 +1,5 @@
 #include "../../include/modules/modem_client.h"
-#include "../../config.h"
+#include "config.h"
 #include <string.h>
 
 ModemClient::ModemClient()

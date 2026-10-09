@@ -39,12 +39,6 @@ private:
     uint32_t _ignition_off_time_ms = 0;
     bool _ignition_was_on = false;
 
-    static constexpr float IGNITION_ON_THRESHOLD = 12.0f;
-    static constexpr float IGNITION_OFF_THRESHOLD = 11.5f;
-    static constexpr uint32_t IGNITION_DEBOUNCE_MS = 5000;
-    static constexpr float CHARGE_DETECT_12V = 13.5f;
-    static constexpr float CHARGE_RELEASE_12V = 13.0f;
-
     void read_voltages();
     void update_mode();
 };

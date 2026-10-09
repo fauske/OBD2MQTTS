@@ -1,5 +1,5 @@
-#include "../../include/axp2101_manager.h"
-#include "../../config.h"
+#include "axp2101_manager.h"
+#include "config.h"
 
 Axp2101Manager::Axp2101Manager() {
 }
@@ -7,9 +7,8 @@ Axp2101Manager::Axp2101Manager() {
 bool Axp2101Manager::begin() {
     Serial.println("[AXP2101] Initializing power management IC...");
 
-    Wire.begin(AXP2101_I2C_SDA_PIN, AXP2101_I2C_SCL_PIN);
-
-    if (!_pmu.begin(Wire, AXP2101_I2C_ADDR)) {
+    if (!_pmu.begin(Wire, AXP2101_I2C_ADDR,
+                    AXP2101_I2C_SDA_PIN, AXP2101_I2C_SCL_PIN)) {
         Serial.println("[AXP2101] Failed to initialize");
         return false;
     }
@@ -22,20 +21,20 @@ bool Axp2101Manager::begin() {
 }
 
 void Axp2101Manager::init_power_rails() {
-    // Enable modem power rail (DC3, typically 3.8V for SIM7080)
-    _pmu.setPowerChannelVoltage(XPOWERS_DCDC3, 3800);
-    _pmu.enablePowerOutput(XPOWERS_DCDC3);
+    // DC3 supports up to 3.4 V on the AXP2101.
+    _pmu.setDC3Voltage(3400);
+    _pmu.enableDC3();
 
     // Enable ESP32 power rail (DCDC1, 3.3V)
-    _pmu.setPowerChannelVoltage(XPOWERS_DCDC1, 3300);
-    _pmu.enablePowerOutput(XPOWERS_DCDC1);
+    _pmu.setDC1Voltage(3300);
+    _pmu.enableDC1();
 
     // Disable charging by default (NTC not present)
-    _pmu.disableCharge();
+    _pmu.disableCellbatteryCharge();
 
     // Set power button: 128ms press = on, 6s press = off
-    _pmu.setPowerButtonPressedTime(XPOWERS_POWEROFF_TIME_6S);
-    _pmu.setPowerButtonReleasedTime(XPOWERS_POWERON_TIME_128MS);
+    _pmu.setPowerKeyPressOnTime(XPOWERS_POWERON_128MS);
+    _pmu.setPowerKeyPressOffTime(XPOWERS_POWEROFF_6S);
 
     Serial.println("[AXP2101] Power rails initialized");
 }
@@ -95,10 +94,10 @@ void Axp2101Manager::enable_modem_power(bool enable) {
     if (!_initialized) return;
 
     if (enable) {
-        _pmu.enablePowerOutput(XPOWERS_DCDC3);
+        _pmu.enableDC3();
         Serial.println("[AXP2101] Modem power ON");
     } else {
-        _pmu.disablePowerOutput(XPOWERS_DCDC3);
+        _pmu.disableDC3();
         Serial.println("[AXP2101] Modem power OFF");
     }
 }
@@ -107,10 +106,10 @@ void Axp2101Manager::enable_esp_power(bool enable) {
     if (!_initialized) return;
 
     if (enable) {
-        _pmu.enablePowerOutput(XPOWERS_DCDC1);
+        _pmu.enableDC1();
         Serial.println("[AXP2101] ESP power ON");
     } else {
-        _pmu.disablePowerOutput(XPOWERS_DCDC1);
+        _pmu.disableDC1();
         Serial.println("[AXP2101] ESP power OFF");
     }
 }

@@ -2,7 +2,7 @@
 
 #include <Arduino.h>
 #include <Wire.h>
-#include <XPowers.h>
+#include <XPowersLib.h>
 
 // ============================================================================
 // AXP2101 Power Manager
@@ -36,7 +36,7 @@ public:
     void shutdown();
 
 private:
-    XPowers _pmu;
+    XPowersPMU _pmu;
     bool _initialized = false;
     uint32_t _last_update_ms = 0;
 
