@@ -2,6 +2,7 @@
 
 #include "../i_obd_transport.h"
 #include "../data_types.h"
+#include "ioniq_bms_decoder.h"
 #include <Arduino.h>
 
 // ============================================================================
@@ -52,13 +53,11 @@ private:
     uint32_t _cmd_sent_ms  = 0;
     uint32_t _init_started_ms = 0;
 
+    uint8_t _response_bin[256] = {};
+    size_t _response_bin_len = 0;
+
     void do_init();
     void do_poll();
-    void process_response();
-    bool decode_2101(const uint8_t *data, size_t len);
-    bool decode_2105(const uint8_t *data, size_t len);
-    bool parse_hex_response(const char *response, uint8_t *out, size_t &out_len);
-    float decode_voltage(uint16_t raw);
-    float decode_current(int16_t raw);
-    float decode_soc(uint8_t raw);
+    void process_2101_response();
+    void process_2105_response();
 };

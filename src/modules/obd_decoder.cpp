@@ -1,9 +1,8 @@
 #include "../../include/modules/obd_decoder.h"
 #include <string.h>
-#include <ctype.h>
 
 // ============================================================================
-// OBD2 Decoder Implementation
+// OBD2 Decoder Implementation with Ioniq BMS Support
 // ============================================================================
 
 ObdDecoder::ObdDecoder(IObdTransport &transport)
@@ -35,21 +34,19 @@ void ObdDecoder::do_init() {
     static uint8_t init_idx = 0;
     static bool sent = false;
 
-    // Send init command
     if (!sent) {
         if (!_transport.send_command(init_cmds[init_idx])) {
-            return;  // transport busy
+            return;
         }
         sent = true;
         _cmd_sent_ms = millis();
         return;
     }
 
-    // Wait for response
     if (!_transport.response_ready()) {
         if (millis() - _cmd_sent_ms > 2000) {
             Serial.printf("[OBD] Init timeout on %s\n", init_cmds[init_idx]);
-            sent = false;  // retry same step
+            sent = false;
         }
         return;
     }
@@ -65,20 +62,18 @@ void ObdDecoder::do_init() {
             _init_state = InitState::READY;
             _poll_state = PollState::IDLE;
             Serial.println("[OBD] ELM327 initialized and ready");
-            init_idx = 0;  // reset for next boot
+            init_idx = 0;
         }
     } else {
         Serial.printf("[OBD] Unexpected response: %s\n", resp);
-        sent = false;  // retry
+        sent = false;
     }
 }
 
 void ObdDecoder::do_poll() {
-    // Non-blocking polling FSM: 2101 -> 2105 -> wait N seconds -> repeat
-
     if (_poll_state == PollState::IDLE) {
         if (millis() - _last_poll_ms < 2000) {
-            return;  // not yet time
+            return;
         }
         _poll_state = PollState::REQUESTING_2101;
     }
@@ -94,8 +89,7 @@ void ObdDecoder::do_poll() {
 
     if (_poll_state == PollState::WAITING_2101) {
         if (_transport.response_ready()) {
-            const char *resp = _transport.get_response();
-            Serial.printf("[OBD] 2101 response: %s\n", resp);
+            process_2101_response();
             _poll_state = PollState::REQUESTING_2105;
         } else if (millis() - _cmd_sent_ms > 5000) {
             Serial.println("[OBD] 2101 timeout");
@@ -116,9 +110,7 @@ void ObdDecoder::do_poll() {
 
     if (_poll_state == PollState::WAITING_2105) {
         if (_transport.response_ready()) {
-            const char *resp = _transport.get_response();
-            Serial.printf("[OBD] 2105 response: %s\n", resp);
-            process_response();
+            process_2105_response();
             _poll_state = PollState::DONE;
         } else if (millis() - _cmd_sent_ms > 5000) {
             Serial.println("[OBD] 2105 timeout");
@@ -137,6 +129,67 @@ void ObdDecoder::do_poll() {
     }
 }
 
+void ObdDecoder::process_2101_response() {
+    const char *resp = _transport.get_response();
+    Serial.printf("[OBD] 2101 raw: %s\n", resp);
+
+    if (!IoniqBmsDecoder::parse_hex_response(resp, _response_bin, _response_bin_len)) {
+        Serial.println("[OBD] 2101 parse failed");
+        return;
+    }
+
+    // Response format: "62 01 <data>" where 62=response, 01=PID
+    // Skip first 2 bytes (62 01) and decode the rest
+    if (_response_bin_len < 16) {
+        Serial.printf("[OBD] 2101 data too short: %u bytes\n", _response_bin_len);
+        return;
+    }
+
+    // Payload starts at index 2
+    uint8_t *payload = _response_bin + 2;
+    size_t payload_len = _response_bin_len - 2;
+
+    IoniqBmsDecoder::decode_2101(
+        payload, payload_len,
+        _bms_data.soc_bms,
+        _bms_data.soc_display,
+        _bms_data.pack_v,
+        _bms_data.pack_a,
+        _bms_data.cell_max_no,
+        _bms_data.cell_min_no,
+        _bms_data.cell_v_max,
+        _bms_data.cell_v_min
+    );
+}
+
+void ObdDecoder::process_2105_response() {
+    const char *resp = _transport.get_response();
+    Serial.printf("[OBD] 2105 raw: %s\n", resp);
+
+    if (!IoniqBmsDecoder::parse_hex_response(resp, _response_bin, _response_bin_len)) {
+        Serial.println("[OBD] 2105 parse failed");
+        return;
+    }
+
+    if (_response_bin_len < 10) {
+        Serial.printf("[OBD] 2105 data too short: %u bytes\n", _response_bin_len);
+        return;
+    }
+
+    uint8_t *payload = _response_bin + 2;
+    size_t payload_len = _response_bin_len - 2;
+
+    IoniqBmsDecoder::decode_2105(
+        payload, payload_len,
+        _bms_data.temp_max,
+        _bms_data.temp_min,
+        _bms_data.temp_inlet,
+        _bms_data.soh,
+        _bms_data.avail_chg_kw,
+        _bms_data.avail_dis_kw
+    );
+}
+
 bool ObdDecoder::have_fresh_data() const {
     if (!_bms_data.valid) return false;
     uint32_t age = millis() - _bms_data.last_update_ms;
@@ -145,57 +198,4 @@ bool ObdDecoder::have_fresh_data() const {
 
 void ObdDecoder::request_trip_queries() {
     Serial.println("[OBD] Requesting odometer and DTC queries");
-}
-
-bool ObdDecoder::parse_hex_response(const char *response, uint8_t *out, size_t &out_len) {
-    out_len = 0;
-    if (!response) return false;
-
-    const char *p = response;
-    while (*p && out_len < 256) {
-        // Skip whitespace
-        while (*p && isspace(*p)) p++;
-        if (!*p) break;
-
-        // Parse two hex digits
-        uint8_t byte = 0;
-        for (int i = 0; i < 2; i++) {
-            if (isxdigit(*p)) {
-                byte = byte * 16 + (isdigit(*p) ? (*p - '0') : (tolower(*p) - 'a' + 10));
-                p++;
-            } else {
-                return false;
-            }
-        }
-        out[out_len++] = byte;
-    }
-    return out_len > 0;
-}
-
-bool ObdDecoder::decode_2101(const uint8_t *data, size_t len) {
-    (void)data;
-    (void)len;
-    return false;
-}
-
-bool ObdDecoder::decode_2105(const uint8_t *data, size_t len) {
-    (void)data;
-    (void)len;
-    return false;
-}
-
-float ObdDecoder::decode_voltage(uint16_t raw) {
-    return (raw * 0.0625f);
-}
-
-float ObdDecoder::decode_current(int16_t raw) {
-    return (raw * 0.1f);
-}
-
-float ObdDecoder::decode_soc(uint8_t raw) {
-    return (raw * 0.5f);
-}
-
-void ObdDecoder::process_response() {
-    // Reserved for when we have real response data to parse
 }
