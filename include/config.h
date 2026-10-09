@@ -25,6 +25,12 @@
 #define MQTT_TOPIC_STATUS "obd2/status"
 #define MQTT_CA_CERT ""
 
+// --- SIM7080 LTE modem (UART1) ---
+#define SIM7080_UART_NUM 1
+#define SIM7080_RX_PIN 4                  // ESP32 RX <- modem TXD
+#define SIM7080_TX_PIN 5                  // ESP32 TX -> modem RXD
+#define SIM7080_BAUD 115200
+
 #define OTA_PASSWORD "CHANGE_ME"
 #define OTA_PORT 3232
 
