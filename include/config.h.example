@@ -34,3 +34,31 @@
 #define SERIAL_BAUD 115200
 #define CHECK_INTERVAL_MS 1000
 #define REPORT_INTERVAL_MS 5000
+
+// --- LilyGo T-SIM7080G-S3 board pinout ---
+// Source: Xinyuan-LilyGO/LilyGo-T-SIM7080G (LILYGO_ESP32S3_CAM_SIM7080G utilities.h)
+// SIM7080G supports only LTE Cat-M and NB-IoT (no 2G/3G/4G): use a matching SIM.
+// Insert the SIM before the modem is powered on.
+#define MODEM_UART_NUM        1       // Serial1
+#define MODEM_BAUD            115200
+#define MODEM_RX_PIN          4       // ESP RX <- modem TXD
+#define MODEM_TX_PIN          5       // ESP TX -> modem RXD
+#define MODEM_PWRKEY_PIN      41      // Modem PWRKEY (pulse to power on)
+#define MODEM_DTR_PIN         42      // Modem DTR (sleep control)
+#define MODEM_RI_PIN          3       // Modem RI (input)
+#define MODEM_RST_PIN         -1      // No reset GPIO: use AT+CFUN=1,1 / PWRKEY / PMU rail cycle
+#define MODEM_PWRKEY_PULSE_MS 1000
+
+// AXP2101 PMU (I2C)
+#define PMU_I2C_SDA           15
+#define PMU_I2C_SCL           7
+#define PMU_IRQ_PIN           6
+#define AXP2101_ADDR          0x34
+#define PMU_MODEM_DC3_MV      3000    // Modem supply rail (DC3)
+#define PMU_LEVEL_BLDO1_MV    3300    // Level shifter rail (BLDO1)
+#define PMU_CHARGE_CURRENT_MA 500     // Battery charge current (500 mA)
+
+// 12V sense input: must be a free ADC1 pin (not used by modem/PMU/camera/SD).
+// GPIOs 1-18, 21, 38-42, 47, 48 are used by board peripherals when camera/SD
+// are attached; adjust if your wiring differs. Use a divider + TVS/Zener.
+#define ADC_12V_PIN           10

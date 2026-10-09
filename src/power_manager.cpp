@@ -1,5 +1,10 @@
 #include "../../include/power_manager.h"
+#include "../include/config.h"
 #include <esp_sleep.h>
+#include <Wire.h>
+#include <XPowersLib.h>
+
+static XPowersAXP2101 g_pmu;
 
 PowerManager::PowerManager() {
 }
@@ -7,9 +12,14 @@ PowerManager::PowerManager() {
 void PowerManager::begin() {
     Serial.println("[PWR] Initializing power manager...");
 
-    // ADC input for voltage measurement on a suitable GPIO.
-    // For now, this is a simulated placeholder.
-    pinMode(10, INPUT);
+    pinMode(ADC_12V_PIN, INPUT);
+    pinMode(MODEM_PWRKEY_PIN, OUTPUT);
+    digitalWrite(MODEM_PWRKEY_PIN, LOW);
+    pinMode(MODEM_DTR_PIN, OUTPUT);
+    digitalWrite(MODEM_DTR_PIN, LOW);
+    pinMode(MODEM_RI_PIN, INPUT);
+
+    _pmu_ok = init_pmu();
 
     read_voltages();
     update_mode();
@@ -23,6 +33,46 @@ void PowerManager::update() {
     }
 }
 
+bool PowerManager::init_pmu() {
+    Wire.begin(PMU_I2C_SDA, PMU_I2C_SCL);
+    if (!g_pmu.begin(Wire, AXP2101_ADDR, PMU_I2C_SDA, PMU_I2C_SCL)) {
+        Serial.println("[PWR] AXP2101 not found");
+        return false;
+    }
+    // No NTC on the board: TS detection must be off or charging is disabled.
+    g_pmu.disableTSPinMeasure();
+    g_pmu.enableBattVoltageMeasure();
+    g_pmu.enableVbusVoltageMeasure();
+    g_pmu.enableSystemVoltageMeasure();
+    g_pmu.setChargeTargetVoltage(XPOWERS_AXP2101_CHG_VOL_4V2);
+    g_pmu.setChargerConstantCurr(XPOWERS_AXP2101_CHG_CUR_500MA);
+    Serial.println("[PWR] AXP2101 initialized");
+    return true;
+}
+
+void PowerManager::modem_power_on() {
+    if (_pmu_ok) {
+        g_pmu.setDC3Voltage(PMU_MODEM_DC3_MV);
+        g_pmu.enableDC3();
+        g_pmu.setBLDO1Voltage(PMU_LEVEL_BLDO1_MV);
+        g_pmu.enableBLDO1();
+        delay(100);  // let the rail stabilise
+    }
+    // PWRKEY pulse: LOW -> HIGH (~1 s) -> LOW
+    digitalWrite(MODEM_PWRKEY_PIN, LOW);
+    delay(100);
+    digitalWrite(MODEM_PWRKEY_PIN, HIGH);
+    delay(MODEM_PWRKEY_PULSE_MS);
+    digitalWrite(MODEM_PWRKEY_PIN, LOW);
+}
+
+void PowerManager::modem_power_off() {
+    if (_pmu_ok) {
+        g_pmu.disableDC3();
+        g_pmu.disableBLDO1();
+    }
+}
+
 bool PowerManager::ignition_on() const {
     return _car_12v > IGNITION_ON_THRESHOLD;
 }
@@ -31,7 +81,13 @@ void PowerManager::read_voltages() {
     // Placeholder: real ADC implementation should be used later.
     // For now, simulated values intentionally keep the logic testable.
     _car_12v = 12.5f;
-    _board_v = 4.2f;
+    if (_pmu_ok) {
+        _batt_v = g_pmu.getBattVoltage() / 1000.0f;
+        _batt_pct = g_pmu.getBatteryPercent();
+        _board_v = g_pmu.getSystemVoltage() / 1000.0f;
+    } else {
+        _board_v = 4.2f;
+    }
 }
 
 void PowerManager::update_mode() {

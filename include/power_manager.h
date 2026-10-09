@@ -26,6 +26,13 @@ public:
     float get_car_12v() const { return _car_12v; }
     float get_board_v() const { return _board_v; }
 
+    // AXP2101 + modem control (LilyGo T-SIM7080G-S3)
+    bool pmu_ok() const { return _pmu_ok; }
+    float battery_v() const { return _batt_v; }
+    int battery_percent() const { return _batt_pct; }
+    void modem_power_on();   // enable PMU rails, pulse PWRKEY
+    void modem_power_off();  // AT+CPOWD=1 should be sent first; then drops rails
+
     bool should_sleep() const;
     void enter_sleep(uint32_t seconds);
 
@@ -34,6 +41,9 @@ private:
 
     float _car_12v = 0.0f;
     float _board_v = 0.0f;
+    float _batt_v = 0.0f;
+    int _batt_pct = -1;
+    bool _pmu_ok = false;
     uint32_t _last_adc_read_ms = 0;
     uint32_t _ignition_on_time_ms = 0;
     uint32_t _ignition_off_time_ms = 0;
@@ -45,6 +55,7 @@ private:
     static constexpr float CHARGE_DETECT_12V = 13.5f;
     static constexpr float CHARGE_RELEASE_12V = 13.0f;
 
+    bool init_pmu();
     void read_voltages();
     void update_mode();
 };
