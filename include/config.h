@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include "secrets.h"
 
 // ============================================================================
 // LilyGo T-SIM7080G-S3 Hardware Configuration
@@ -13,27 +14,34 @@
 #define DEVICE_HOSTNAME "obd2mqtts"
 #define DEVICE_MODEL "LilyGo-T-SIM7080G-S3"
 
-// --- WiFi Configuration ---
-#define WIFI_SSID "CHANGE_ME"
-#define WIFI_PASSWORD "CHANGE_ME"
-
 // --- MQTT over TLS (MQTTS) ---
-#define MQTT_HOST "mqtt.example.com"
 #define MQTT_PORT 8883
 #define MQTT_USE_TLS 1
 #define MQTT_CLIENT_ID "obd2mqtts-client"
-#define MQTT_USERNAME "CHANGE_ME"
-#define MQTT_PASSWORD "CHANGE_ME"
 #define MQTT_TOPIC_TELEMETRY "obd2/telemetry"
 #define MQTT_TOPIC_STATUS "obd2/status"
-#define MQTT_CA_CERT ""
+#define MQTT_CA_CERT_NAME "obd2mqtts-ca.pem"
+#define CELLULAR_NTP_SERVER "pool.ntp.org"
+
+#ifndef CELLULAR_APN
+#define CELLULAR_APN "YOUR_CARRIER_APN"
+#endif
+#ifndef CELLULAR_APN_USER
+#define CELLULAR_APN_USER ""
+#endif
+#ifndef CELLULAR_APN_PASSWORD
+#define CELLULAR_APN_PASSWORD ""
+#endif
+#ifndef CELLULAR_SIM_PIN
+#define CELLULAR_SIM_PIN ""
+#endif
 
 // --- OTA Configuration ---
-#define OTA_PASSWORD "CHANGE_ME"
 #define OTA_PORT 3232
 
 // --- Serial Configuration ---
 #define SERIAL_BAUD 115200
+#define ENABLE_SERIAL_DIAGNOSTICS 1
 
 // ============================================================================
 // GPIO PINOUT (LilyGo T-SIM7080G-S3)
@@ -47,13 +55,14 @@
 
 // AXP2101 Power Management IC (I2C)
 #define AXP2101_I2C_ADDR      0x34
-#define AXP2101_I2C_SDA_PIN   42     // I2C Data
-#define AXP2101_I2C_SCL_PIN   41     // I2C Clock
+#define AXP2101_I2C_SDA_PIN   15     // LilyGO T-SIM7080G-S3 PMU I2C Data
+#define AXP2101_I2C_SCL_PIN   7      // LilyGO T-SIM7080G-S3 PMU I2C Clock
 #define AXP2101_IRQ_PIN       6      // Interrupt output
 
-// Modem Power Control (via GPIO)
-// Note: Modem is powered via AXP2101 DC-rail + GPIO pulse on PWRKEY
-#define SIM7080_PWRKEY_PIN    -1     // TODO: Verify actual pin if available
+// SIM7080 controls from LilyGO's official T-SIM7080G-S3 utilities.h
+#define SIM7080_PWRKEY_PIN    41
+#define SIM7080_DTR_PIN       42
+#define SIM7080_RI_PIN        3
 
 // ADC Input for Car 12V Measurement
 // Available ADC1 pins (not used by camera/SD): 9, 19, 20, etc.
@@ -99,6 +108,13 @@
 #define ENABLE_AXP2101 true         // Power management IC
 #define ENABLE_BLE true             // Bluetooth Low Energy (ELM327)
 #define ENABLE_SIM7080 true         // LTE modem
+
+// BLE target: match advertised name substring (case-insensitive) OR service UUID.
+// vLinker MC-IOS uses service 0x18F0, write 0x2AF1, notify 0x2AF0.
+#define BLE_TARGET_NAME_SUBSTR "vlinker"
+#define BLE_SERVICE_UUID       "18F0"
+#define BLE_WRITE_CHAR_UUID    "2AF1"
+#define BLE_NOTIFY_CHAR_UUID   "2AF0"
 
 // ============================================================================
 // IMPORTANT NOTES

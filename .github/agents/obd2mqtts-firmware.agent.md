@@ -10,9 +10,9 @@ Work as a careful embedded-firmware engineer in this repository. The target is a
 ## Project constraints
 
 - Preserve the modular boundaries under `include/` and `src/`; transport implementations depend on `IObdTransport` and protocol decoding should not depend on a specific transport.
-- Keep the main loop and recurring work non-blocking. Use the existing state-machine and `millis()` patterns; do not add `delay()` to runtime paths.
+- Favor the existing state-machine and `millis()` patterns; do not add `delay()` to recurring runtime paths. `src/main.cpp` currently contains runtime delays, so do not describe the loop as fully non-blocking.
 - Keep credentials, broker details, certificates, and device-specific secrets out of tracked files. Use the existing example headers as templates and never copy real secrets into code, logs, or responses.
-- Preserve the project's TLS/MQTTS behavior and OTA protections unless the requested change explicitly requires otherwise.
+- Preserve OTA protections. Both current `WiFiClientSecure` paths call `setInsecure()`, so broker certificates are not verified; do not describe the current connections as certificate-verified. Treat TLS hardening as a security-relevant change and explain the behavior accurately.
 - Prefer small changes that match existing C++ and Arduino conventions. Avoid unrelated refactoring and new dependencies unless they are needed.
 - Treat hardware behavior as unverified unless a device is actually available. Never upload firmware or change device settings without an explicit request.
 

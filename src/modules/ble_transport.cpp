@@ -1,4 +1,5 @@
 #include "../../include/modules/ble_transport.h"
+#include "../../include/config.h"
 #include <string.h>
 
 // ============================================================================
@@ -12,7 +13,16 @@ static void nimble_scan_callback(NimBLEScanResults results) {
 }
 
 static void nimble_advertise_callback(NimBLEAdvertisedDevice *dev) {
-    if (g_ble_instance && dev->getName().find("vLinker") != std::string::npos) {
+    if (!g_ble_instance) {
+        return;
+    }
+    std::string name = dev->getName();
+    for (auto &c : name) {
+        c = tolower(static_cast<unsigned char>(c));
+    }
+    bool name_match = name.find(BLE_TARGET_NAME_SUBSTR) != std::string::npos;
+    bool svc_match = dev->isAdvertisingService(NimBLEUUID(BLE_SERVICE_UUID));
+    if (name_match || svc_match) {
         g_ble_instance->onDeviceFound(dev);
     }
 }
@@ -165,14 +175,14 @@ bool BleTransport::discover_characteristics() {
     }
 
     try {
-        NimBLERemoteService *pSvc = _client->getService("18F0");
+        NimBLERemoteService *pSvc = _client->getService(BLE_SERVICE_UUID);
         if (!pSvc) {
-            Serial.println("[BLE] Service 18F0 not found");
+            Serial.println("[BLE] Service " BLE_SERVICE_UUID " not found");
             return false;
         }
 
-        _write_char = pSvc->getCharacteristic("2AF1");
-        _notify_char = pSvc->getCharacteristic("2AF0");
+        _write_char = pSvc->getCharacteristic(BLE_WRITE_CHAR_UUID);
+        _notify_char = pSvc->getCharacteristic(BLE_NOTIFY_CHAR_UUID);
 
         if (!_write_char || !_notify_char) {
             Serial.println("[BLE] Characteristics not found");

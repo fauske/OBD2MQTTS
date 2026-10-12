@@ -48,5 +48,6 @@ private:
     bool _is_charging = false;
 
     void init_power_rails();
+    bool configure_battery_temperature_protection();
     void read_voltages();
 };

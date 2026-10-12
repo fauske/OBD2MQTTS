@@ -13,7 +13,22 @@ void PowerManager::begin() {
     pinMode(10, INPUT);
 
     read_voltages();
-    update_mode();
+    _last_adc_read_ms = millis();
+
+    if (ignition_on()) {
+        _mode = Mode::ACTIVE;
+        _ignition_was_on = true;
+        _ignition_on_time_ms = _last_adc_read_ms;
+        Serial.printf("[PWR] Initial mode -> ACTIVE (12V=%.1f)\n", _car_12v);
+    } else if (_car_12v > CHARGING_DETECT_THRESHOLD_V) {
+        _mode = Mode::AWAKE;
+        _ignition_off_time_ms = _last_adc_read_ms;
+        Serial.printf("[PWR] Initial mode -> AWAKE (charging, 12V=%.1f)\n", _car_12v);
+    } else {
+        _mode = Mode::MINIMAL;
+        _ignition_off_time_ms = _last_adc_read_ms;
+        Serial.printf("[PWR] Initial mode -> MINIMAL (parked, 12V=%.1f)\n", _car_12v);
+    }
 }
 
 void PowerManager::update() {
