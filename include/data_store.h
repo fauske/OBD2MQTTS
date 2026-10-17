@@ -34,5 +34,5 @@ private:
     GnssData _gnss;
     TripData _trip;
     SystemStatus _status;
-    portMUX_TYPE _mux;
+    mutable portMUX_TYPE _mux;
 };

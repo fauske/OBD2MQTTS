@@ -1,5 +1,5 @@
 #include "../../include/modules/mqtt_publisher.h"
-#include "../../config.h"
+#include "config.h"
 
 // ============================================================================
 // MQTT Publisher Implementation (MQTTS with TLS)
