@@ -12,7 +12,6 @@ build/
 *.map
 
 # Local secrets / credentials — NEVER COMMIT THESE
-include/config.h
 include/secrets.h
 secrets/
 .env

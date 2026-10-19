@@ -60,7 +60,7 @@ void MqttPublisher::connect() {
 bool MqttPublisher::publish_telemetry(const BmsData &bms) {
     if (!_connected) return false;
 
-    DynamicJsonDocument doc(256);
+    JsonDocument doc;
     doc["ts"] = millis();
     doc["soc_bms"] = bms.soc_bms;
     doc["soc_display"] = bms.soc_display;
@@ -85,7 +85,7 @@ bool MqttPublisher::publish_telemetry(const BmsData &bms) {
 bool MqttPublisher::publish_status(const SystemStatus &status) {
     if (!_connected) return false;
 
-    DynamicJsonDocument doc(256);
+    JsonDocument doc;
     doc["ts"] = millis();
     doc["ble_connected"] = status.ble_connected;
     doc["obd_ready"] = status.obd_ready;
@@ -108,7 +108,7 @@ bool MqttPublisher::publish_status(const SystemStatus &status) {
 bool MqttPublisher::publish_location(const GnssData &gnss) {
     if (!_connected || !gnss.valid) return false;
 
-    DynamicJsonDocument doc(256);
+    JsonDocument doc;
     doc["ts"] = millis();
     doc["lat"] = gnss.lat;
     doc["lon"] = gnss.lon;

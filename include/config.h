@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include "secrets.h"
 
 // ============================================================================
 // LilyGo T-SIM7080G-S3 Hardware Configuration
@@ -12,25 +13,6 @@
 #define DEVICE_NAME "OBD2MQTTS-ESP32"
 #define DEVICE_HOSTNAME "obd2mqtts"
 #define DEVICE_MODEL "LilyGo-T-SIM7080G-S3"
-
-// --- WiFi Configuration ---
-#define WIFI_SSID "CHANGE_ME"
-#define WIFI_PASSWORD "CHANGE_ME"
-
-// --- MQTT over TLS (MQTTS) ---
-#define MQTT_HOST "mqtt.example.com"
-#define MQTT_PORT 8883
-#define MQTT_USE_TLS 1
-#define MQTT_CLIENT_ID "obd2mqtts-client"
-#define MQTT_USERNAME "CHANGE_ME"
-#define MQTT_PASSWORD "CHANGE_ME"
-#define MQTT_TOPIC_TELEMETRY "obd2/telemetry"
-#define MQTT_TOPIC_STATUS "obd2/status"
-#define MQTT_CA_CERT ""
-
-// --- OTA Configuration ---
-#define OTA_PASSWORD "CHANGE_ME"
-#define OTA_PORT 3232
 
 // --- Serial Configuration ---
 #define SERIAL_BAUD 115200
@@ -47,36 +29,56 @@
 
 // AXP2101 Power Management IC (I2C)
 #define AXP2101_I2C_ADDR      0x34
-#define AXP2101_I2C_SDA_PIN   42     // I2C Data
-#define AXP2101_I2C_SCL_PIN   41     // I2C Clock
+#define AXP2101_I2C_SDA_PIN   15     // I2C Data (GPIO 41/42 are modem PWRKEY/DTR)
+#define AXP2101_I2C_SCL_PIN   7      // I2C Clock
 #define AXP2101_IRQ_PIN       6      // Interrupt output
 
-// Modem Power Control (via GPIO)
-// Note: Modem is powered via AXP2101 DC-rail + GPIO pulse on PWRKEY
-#define SIM7080_PWRKEY_PIN    -1     // TODO: Verify actual pin if available
+// Modem control (powered via AXP2101 DC3; PWRKEY pulse switches the modem on)
+#define SIM7080_PWRKEY_PIN    41
+#define SIM7080_DTR_PIN       42     // held LOW to keep the modem awake
+
+// Cellular
+#define MODEM_APN             "telenor"
+#define MODEM_NETWORK_MODE    3      // AT+CMNB: 1=Cat-M, 2=NB-IoT, 3=both
 
 // ADC Input for Car 12V Measurement
 // Available ADC1 pins (not used by camera/SD): 9, 19, 20, etc.
 // Use voltage divider (5.1k + 10k recommended for 0-5V range)
-#define ADC_12V_PIN           9      // GPIO9 = ADC1_CHANNEL_8
-#define ADC_12V_CHANNEL       ADC1_CHANNEL_8
-#define ADC_12V_DIVIDER       5.278f // (10k + 5.1k) / 5.1k
+#define ADC_12V_PIN           10     // GPIO10 = ADC1_CHANNEL_9
+#define ADC_12V_CHANNEL       ADC1_CHANNEL_9
+#define ADC_12V_DIVIDER       5.278f // calibrate against a multimeter
+// true = fixed 12.5 V (bench use); false = read ADC_12V_PIN
+#define ADC_12V_SIMULATE      false
+
+// Ignition sense input: ACTIVE while the level equals IGNITION_ACTIVE_LEVEL (also wakes from deep sleep)
+#define IGNITION_PIN          1
+#define IGNITION_ACTIVE_LEVEL HIGH
 
 // ============================================================================
 // POLLING INTERVALS
 // ============================================================================
 
-#define POLL_INTERVAL_ACTIVE_MS      2000    // Ignition ON: 2 sec polling
-#define POLL_INTERVAL_AWAKE_MS       10000   // Charging: 10 sec polling
-#define POLL_INTERVAL_MINIMAL_MS     3600000 // Parked: 60 min polling
-#define REPORT_INTERVAL_MS           2500    // MQTT publish cadence (active)
-#define STATUS_INTERVAL_MS           30000   // Status updates
+#define POLL_INTERVAL_ACTIVE_MS      2000    // BLE/OBD polling (local only, uses no mobile data)
+
+// MQTT reporting over LTE (these cost mobile data)
+#define REPORT_INTERVAL_ACTIVE_MS    60000   // Driving: telemetry every 1 min
+#define REPORT_INTERVAL_CHARGING_MS  300000  // Charging: telemetry every 5 min
+#define STATUS_INTERVAL_MS           600000  // Status + voltages every 10 min
+#define REPORT_EVENT_SOC_DELTA       1.0f    // Send early when display SoC moves this many %
+#define REPORT_EVENT_MIN_GAP_MS      15000   // Minimum spacing between early sends
 
 // ============================================================================
 // POWER & SLEEP SETTINGS
 // ============================================================================
 
-#define DEEP_SLEEP_DURATION_SEC      3600    // 1 hour between parked samples
+// Parked (MINIMAL): deep sleep, wake the modem, send voltages, sleep again
+#define MINIMAL_REPORT_INTERVAL_SEC  21600   // 6 hours between parked reports
+#define MINIMAL_CHECK_INTERVAL_SEC   300     // short wake to check 12V for charging (no radio)
+#define MINIMAL_ONLINE_TIMEOUT_MS    180000  // give up and sleep if LTE is not up in 3 min
+
+// LTE link upkeep while awake (data usage)
+#define MODEM_LINK_CHECK_INTERVAL_MS 300000  // 5 min
+#define MQTT_KEEPALIVE_S             120
 
 // Ignition detection thresholds
 #define IGNITION_ON_THRESHOLD_V      12.0f   // Car running
@@ -92,13 +94,16 @@
 // ============================================================================
 
 #define ENABLE_MQTT true
-#define ENABLE_OTA true
-#define ENABLE_WIFI_OTA_WINDOW true
+#define ENABLE_OTA false
+#define ENABLE_WIFI_OTA_WINDOW false
 #define WIFI_OTA_WINDOW_MS 600000  // 10 minutes at ignition ON
 
 #define ENABLE_AXP2101 true         // Power management IC
 #define ENABLE_BLE true             // Bluetooth Low Energy (ELM327)
 #define ENABLE_SIM7080 true         // LTE modem
+
+// OBD adapter BLE address, e.g. "aa:bb:cc:dd:ee:ff". Empty = match the name "vLinker".
+#define OBD_BLE_MAC ""
 
 // ============================================================================
 // IMPORTANT NOTES

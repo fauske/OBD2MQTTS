@@ -1,5 +1,7 @@
 #include "../../include/modules/ble_transport.h"
+#include "config.h"
 #include <string.h>
+#include <strings.h>
 
 // ============================================================================
 // NimBLE Callback Shims (must be global/static to work with C-style callbacks)
@@ -12,9 +14,11 @@ static void nimble_scan_callback(NimBLEScanResults results) {
 }
 
 static void nimble_advertise_callback(NimBLEAdvertisedDevice *dev) {
-    if (g_ble_instance && dev->getName().find("vLinker") != std::string::npos) {
-        g_ble_instance->onDeviceFound(dev);
-    }
+    if (!g_ble_instance) return;
+    bool match = strlen(OBD_BLE_MAC) > 0
+        ? strcasecmp(dev->getAddress().toString().c_str(), OBD_BLE_MAC) == 0
+        : dev->getName().find("vLinker") != std::string::npos;
+    if (match) g_ble_instance->onDeviceFound(dev);
 }
 
 class AdvertisedDeviceCallback : public NimBLEAdvertisedDeviceCallbacks {
@@ -65,8 +69,8 @@ void BleTransport::begin() {
 
     NimBLEScan *pScan = NimBLEDevice::getScan();
     pScan->setAdvertisedDeviceCallbacks(&g_advertised_device_cb, false);
-    pScan->setInterval(100);
-    pScan->setWindow(99);
+    pScan->setInterval(200);
+    pScan->setWindow(50);  // ~25% duty instead of listening continuously
     pScan->setActiveScan(true);
 
     _state = State::SCANNING;
@@ -96,8 +100,8 @@ void BleTransport::update() {
 }
 
 void BleTransport::do_scan() {
-    // Scan timeout
-    if (millis() - _scan_started_ms > 5000) {
+    // Restart rarely; every restart clears NimBLE's result list and re-reports all devices.
+    if (millis() - _scan_started_ms > 60000) {
         NimBLEDevice::getScan()->stop();
         Serial.println("[BLE] Scan timeout, restarting...");
         _scan_started_ms = millis();
@@ -106,6 +110,7 @@ void BleTransport::do_scan() {
 
     if (_found_flag) {
         _found_flag = false;
+        NimBLEDevice::getScan()->stop();
         if (_target) {
             _state = State::CONNECTING;
             _connect_started_ms = millis();

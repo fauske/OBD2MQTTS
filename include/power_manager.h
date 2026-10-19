@@ -37,8 +37,11 @@ private:
     uint32_t _last_adc_read_ms = 0;
     uint32_t _ignition_on_time_ms = 0;
     uint32_t _ignition_off_time_ms = 0;
-    bool _ignition_was_on = false;
+    bool _charging_now = false;
+    bool _debouncing = false;
+    Mode _pending = Mode::MINIMAL;
 
     void read_voltages();
     void update_mode();
+    Mode target_mode() const;
 };
