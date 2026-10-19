@@ -91,6 +91,19 @@ void BleTransport::update() {
         case State::DISCOVERING:
             do_discover();
             break;
+        case State::DISCONNECTED:
+            if (_client) {
+                NimBLEDevice::deleteClient(_client);
+                _client = nullptr;
+            }
+            _write_char = nullptr;
+            _notify_char = nullptr;
+            _target = nullptr;
+            _scan_started_ms = millis();
+            _state = State::SCANNING;
+            NimBLEDevice::getScan()->start(0, nimble_scan_callback, false);
+            Serial.println("[BLE] Restarting scan after disconnect");
+            break;
         case State::READY:
             // Maintain connection, handle notifies
             break;
@@ -214,7 +227,7 @@ bool BleTransport::send_command(const char *cmd) {
 
     try {
         std::string cmdbuf = cmd;
-        cmdbuf += "\r\n";
+        cmdbuf += "\r";
         _write_char->writeValue(
             reinterpret_cast<const uint8_t *>(cmdbuf.data()), cmdbuf.length());
         _cmd_in_flight = true;

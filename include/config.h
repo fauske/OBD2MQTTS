@@ -94,8 +94,8 @@
 // ============================================================================
 
 #define ENABLE_MQTT true
-#define ENABLE_OTA false
-#define ENABLE_WIFI_OTA_WINDOW false
+#define ENABLE_OTA true
+#define ENABLE_WIFI_OTA_WINDOW true
 #define WIFI_OTA_WINDOW_MS 600000  // 10 minutes at ignition ON
 
 #define ENABLE_AXP2101 true         // Power management IC

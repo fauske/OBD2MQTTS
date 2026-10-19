@@ -29,6 +29,11 @@ void Axp2101Manager::init_power_rails() {
     _pmu.setDC1Voltage(3300);
     _pmu.enableDC1();
 
+    _pmu.enableBattDetection();
+    _pmu.enableBattVoltageMeasure();
+    _pmu.enableVbusVoltageMeasure();
+    _pmu.enableSystemVoltageMeasure();
+
     // Disable charging by default (NTC not present)
     _pmu.disableCellbatteryCharge();
 
