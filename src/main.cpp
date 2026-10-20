@@ -23,6 +23,24 @@ Axp2101Manager g_axp;
 
 bool g_wifi_ota_active = false;
 uint32_t g_wifi_ota_start_ms = 0;
+bool g_obd_started = false;
+PowerManager::Mode g_last_power_mode = PowerManager::Mode::MINIMAL;
+bool g_trip_publish_pending = false;
+bool g_gnss_publish_pending = false;
+
+void update_system_status() {
+    g_store.set_ble_connected(g_ble.is_connected());
+    g_store.set_obd_ready(g_obd.is_ready());
+    g_store.set_modem_ready(g_modem.is_data_connected());
+    g_store.set_mqtt_online(g_modem.is_online());
+
+    const int csq = g_modem.signal_quality();
+    const int8_t rssi_dbm = csq > 0 && csq <= 31
+        ? static_cast<int8_t>(-113 + 2 * csq)
+        : 0;
+    g_store.set_rssi(rssi_dbm);
+    g_store.set_uptime_s(millis() / 1000);
+}
 
 #if ENABLE_SERIAL_DIAGNOSTICS
 namespace {
@@ -119,12 +137,11 @@ void setup() {
         Serial.println("[BOOT] AXP2101 initialization failed");
     }
     g_power.begin();
+    g_last_power_mode = g_power.current_mode();
 
     if (g_power.current_mode() == PowerManager::Mode::ACTIVE) {
         Serial.println("[BOOT] ACTIVE mode: ignition ON");
 
-        g_ble.begin();
-        g_obd.begin();
         g_modem.begin();
 
         if (ENABLE_WIFI_OTA_WINDOW) {
@@ -150,6 +167,12 @@ void loop() {
     g_power.update();
     g_axp.update();
 
+    if (!g_obd_started && g_power.current_mode() != PowerManager::Mode::MINIMAL) {
+        g_ble.begin();
+        g_obd.begin();
+        g_obd_started = true;
+    }
+
     if (g_wifi_ota_active && g_ota.is_ready()) {
         g_ota.handle();
     }
@@ -165,37 +188,41 @@ void loop() {
         case PowerManager::Mode::ACTIVE:
             g_ble.update();
             g_obd.update();
+            g_modem.set_gnss_enabled(true);
             g_modem.update();
 
-            g_store.set_ble_connected(g_ble.is_connected());
-            g_store.set_obd_ready(g_obd.is_ready());
-            g_store.set_mqtt_online(g_modem.is_online());
+            static uint32_t last_gnss_poll_ms = 0;
+            if (g_modem.gnss_ready() &&
+                millis() - last_gnss_poll_ms >= GNSS_POLL_INTERVAL_MS) {
+                last_gnss_poll_ms = millis();
+                GnssData gnss;
+                if (g_modem.read_gnss(gnss)) {
+                    g_store.set_gnss_data(gnss);
+                }
+            }
 
             static uint32_t last_active_pub = 0;
             if (millis() - last_active_pub >= REPORT_INTERVAL_MS) {
                 last_active_pub = millis();
                 BmsData b = g_obd.get_bms_data();
-                if (b.valid) {
+                if (b.valid && g_obd.have_fresh_data()) {
                     g_store.set_bms_data(b);
                     g_modem.publish_telemetry(b);
                 }
-                SystemStatus s = g_store.get_status();
-                g_modem.publish_status(s);
             }
             break;
 
         case PowerManager::Mode::AWAKE:
             // Charging while ignition OFF: keep telemetry active, but less frequent
+            g_ble.update();
             g_obd.update();
+            g_modem.set_gnss_enabled(false);
             g_modem.update();
-            g_store.set_obd_ready(g_obd.is_ready());
-            g_store.set_mqtt_online(g_modem.is_online());
-
             static uint32_t last_awake_pub = 0;
             if (millis() - last_awake_pub >= POLL_INTERVAL_AWAKE_MS) {
                 last_awake_pub = millis();
                 BmsData b = g_obd.get_bms_data();
-                if (b.valid) {
+                if (b.valid && g_obd.have_fresh_data()) {
                     g_store.set_bms_data(b);
                     g_modem.publish_telemetry(b);
                 }
@@ -203,25 +230,93 @@ void loop() {
             break;
 
         case PowerManager::Mode::MINIMAL:
-            // Parked/out-of-charge: publish a power sample only every hour.
+            g_modem.set_gnss_enabled(false);
             g_modem.update();
-            static uint32_t last_minimal_pub = 0;
-            if (millis() - last_minimal_pub >= POLL_INTERVAL_MINIMAL_MS) {
-                last_minimal_pub = millis();
-                PowerData power;
-                power.car_12v = g_power.get_car_12v();
-                power.board_v = g_power.get_board_v();
-                g_modem.publish_power(power);
+            if (g_obd.trip_query_pending()) {
+                g_ble.update();
+                g_obd.update();
             }
 
             // Keep USB serial available while diagnostics are enabled.
 #if !ENABLE_SERIAL_DIAGNOSTICS
-            if (!g_modem.is_online()) {
+            if (!g_modem.is_online() && !g_obd.trip_query_pending()) {
                 Serial.println("[MAIN] Sleeping for deep-sleep window");
                 g_power.enter_sleep(DEEP_SLEEP_DURATION_SEC);
             }
 #endif
             break;
+    }
+
+    const PowerManager::Mode current_power_mode = g_power.current_mode();
+    if (current_power_mode == PowerManager::Mode::ACTIVE) {
+        g_trip_publish_pending = false;
+        g_gnss_publish_pending = false;
+    } else if (g_last_power_mode == PowerManager::Mode::ACTIVE) {
+        if (g_obd_started) {
+            g_obd.request_trip_queries();
+            g_trip_publish_pending = true;
+        }
+        g_gnss_publish_pending = true;
+    }
+    g_last_power_mode = current_power_mode;
+
+    static uint32_t last_trip_publish_attempt_ms = 0;
+    if (g_trip_publish_pending && g_obd.trip_queries_complete() &&
+        g_modem.is_online() &&
+        millis() - last_trip_publish_attempt_ms >= STATUS_INTERVAL_MS) {
+        last_trip_publish_attempt_ms = millis();
+        const TripData trip = g_obd.get_trip_data();
+        g_store.set_trip_data(trip);
+        if (g_modem.publish_trip(trip)) {
+            g_trip_publish_pending = false;
+        }
+    }
+
+    static uint32_t last_gnss_publish_attempt_ms = 0;
+    if (g_gnss_publish_pending && g_modem.is_online() &&
+        millis() - last_gnss_publish_attempt_ms >= STATUS_INTERVAL_MS) {
+        last_gnss_publish_attempt_ms = millis();
+        const GnssData gnss = g_store.get_gnss_data();
+        if (!gnss.valid || millis() - gnss.last_update_ms > GNSS_POLL_INTERVAL_MS * 3) {
+            g_gnss_publish_pending = false;
+        } else if (g_modem.publish_gnss(gnss)) {
+            g_gnss_publish_pending = false;
+        }
+    }
+
+    static PowerManager::Mode previous_power_mode = current_power_mode;
+    static uint32_t last_power_pub_ms = 0;
+    const bool power_mode_changed = current_power_mode != previous_power_mode;
+
+    const uint32_t power_report_interval_ms =
+        current_power_mode == PowerManager::Mode::MINIMAL
+            ? ((AXP2101_ENABLE_BATTERY_CHARGING &&
+                AXP2101_ALLOW_UNVERIFIED_BENCH_CHARGING &&
+                !AXP2101_NTC_PROTECTION_VERIFIED)
+                    ? STATUS_INTERVAL_MS
+                    : POLL_INTERVAL_MINIMAL_MS)
+            : STATUS_INTERVAL_MS;
+    if (g_modem.is_online() &&
+        (power_mode_changed || millis() - last_power_pub_ms >= power_report_interval_ms)) {
+        previous_power_mode = current_power_mode;
+        last_power_pub_ms = millis();
+        PowerData power;
+        power.car_12v = g_power.get_car_12v();
+        power.board_v = g_axp.get_battery_voltage();
+        power.vbus_v = g_axp.get_vbus_voltage();
+        power.vsys_v = g_axp.get_vsys_voltage();
+        power.battery_percent = g_axp.get_battery_percent();
+        power.battery_present = g_axp.is_battery_present();
+        power.charging = g_axp.is_charging();
+        power.ts_adc_raw = g_axp.get_ts_adc_raw();
+        g_modem.publish_power(power);
+    }
+
+    update_system_status();
+    static uint32_t last_status_pub_ms = 0;
+    if (g_modem.is_online() && millis() - last_status_pub_ms >= STATUS_INTERVAL_MS) {
+        last_status_pub_ms = millis();
+        g_modem.publish_status(g_store.get_status());
     }
 
 #if ENABLE_SERIAL_DIAGNOSTICS

@@ -8,9 +8,8 @@ PowerManager::PowerManager() {
 void PowerManager::begin() {
     Serial.println("[PWR] Initializing power manager...");
 
-    // ADC input for voltage measurement on a suitable GPIO.
-    // For now, this is a simulated placeholder.
-    pinMode(10, INPUT);
+    pinMode(ADC_12V_PIN, INPUT);
+    analogSetPinAttenuation(ADC_12V_PIN, ADC_11db);
 
     read_voltages();
     _last_adc_read_ms = millis();
@@ -44,10 +43,15 @@ bool PowerManager::ignition_on() const {
 }
 
 void PowerManager::read_voltages() {
-    // Placeholder: real ADC implementation should be used later.
-    // For now, simulated values intentionally keep the logic testable.
-    _car_12v = 12.5f;
-    _board_v = 4.2f;
+    constexpr uint8_t SAMPLE_COUNT = 8;
+    uint32_t adc_millivolts_total = 0;
+    for (uint8_t sample = 0; sample < SAMPLE_COUNT; ++sample) {
+        adc_millivolts_total += analogReadMilliVolts(ADC_12V_PIN);
+    }
+
+    const float adc_voltage =
+        (adc_millivolts_total / static_cast<float>(SAMPLE_COUNT)) / 1000.0f;
+    _car_12v = adc_voltage * ADC_12V_DIVIDER;
 }
 
 void PowerManager::update_mode() {

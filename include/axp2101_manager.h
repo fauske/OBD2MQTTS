@@ -27,6 +27,8 @@ public:
     // Battery state
     int get_battery_percent() const;
     bool is_charging() const;
+    bool is_battery_present() const { return _battery_present; }
+    uint16_t get_ts_adc_raw() const { return _ts_adc_raw; }
     bool is_discharging() const;
     bool is_connected() const;  // VBUS connected
 
@@ -38,7 +40,10 @@ public:
 private:
     XPowersPMU _pmu;
     bool _initialized = false;
+    bool _charging_enabled = false;
+    uint8_t _charge_current_setting = 0xFF;
     uint32_t _last_update_ms = 0;
+    uint32_t _last_ts_check_ms = 0;
 
     // Cached values
     float _vbus_v = 0.0f;
@@ -46,8 +51,12 @@ private:
     float _vsys_v = 0.0f;
     int _batt_percent = 0;
     bool _is_charging = false;
+    bool _battery_present = false;
+    uint16_t _ts_adc_raw = 0;
 
     void init_power_rails();
     bool configure_battery_temperature_protection();
+    bool set_charge_current(uint8_t current);
+    void log_ts_diagnostics();
     void read_voltages();
 };

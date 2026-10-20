@@ -24,7 +24,6 @@ public:
 
     bool ignition_on() const;
     float get_car_12v() const { return _car_12v; }
-    float get_board_v() const { return _board_v; }
 
     bool should_sleep() const;
     void enter_sleep(uint32_t seconds);
@@ -33,7 +32,6 @@ private:
     Mode _mode = Mode::MINIMAL;
 
     float _car_12v = 0.0f;
-    float _board_v = 0.0f;
     uint32_t _last_adc_read_ms = 0;
     uint32_t _ignition_on_time_ms = 0;
     uint32_t _ignition_off_time_ms = 0;

@@ -67,6 +67,12 @@ struct BmsData {
 struct PowerData {
     float    board_v       = NAN;   // V (ESP32 board LiPo)
     float    car_12v       = NAN;   // V (vehicle 12V battery)
+    float    vbus_v        = NAN;   // V (PMU input)
+    float    vsys_v        = NAN;   // V (PMU system rail)
+    int      battery_percent = -1;
+    uint16_t ts_adc_raw    = 0;
+    bool     battery_present = false;
+    bool     charging      = false;
     uint32_t last_update_ms = 0;
 };
 
@@ -75,8 +81,10 @@ struct GnssData {
     float    lat           = NAN;   // degrees, + = north
     float    lon           = NAN;   // degrees, + = east
     float    alt_m         = NAN;   // meters above sea level
+    float   speed_kph     = NAN;   // km/h over ground
     float    hdop          = NAN;   // horizontal dilution of precision
     uint8_t  sats_view     = 0;     // satellites visible
+    uint8_t  sats_used     = 0;     // satellites used in fix
     uint32_t ttff_ms       = 0;     // time to first fix, ms
     char     utc[21]       = {};    // "YYYY-MM-DDTHH:MM:SSZ"
     bool     valid         = false; // solution meets quality gates

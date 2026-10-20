@@ -21,7 +21,10 @@ public:
     bool  have_fresh_data() const;
 
     BmsData get_bms_data() const { return _bms_data; }
-    void    request_trip_queries();
+    TripData get_trip_data() const { return _trip_data; }
+    bool trip_query_pending() const { return _trip_query_pending; }
+    bool trip_queries_complete() const { return _trip_queries_complete; }
+    void request_trip_queries();
 
 private:
     enum class InitState : uint8_t {
@@ -39,7 +42,11 @@ private:
         WAITING_2101,
         REQUESTING_2105,
         WAITING_2105,
-        DONE
+        DONE,
+        REQUESTING_ODOMETER,
+        WAITING_ODOMETER,
+        REQUESTING_DTC,
+        WAITING_DTC
     };
 
     IObdTransport &_transport;
@@ -48,6 +55,12 @@ private:
 
     bool     _elm_ready  = false;
     BmsData  _bms_data;
+    bool     _poll_2101_ok = false;
+    bool     _poll_2105_ok = false;
+    TripData _trip_data;
+    bool     _trip_query_pending = false;
+    bool     _trip_queries_complete = false;
+    uint32_t _trip_query_started_ms = 0;
 
     uint32_t _last_poll_ms = 0;
     uint32_t _cmd_sent_ms  = 0;
@@ -58,6 +71,8 @@ private:
 
     void do_init();
     void do_poll();
-    void process_2101_response();
-    void process_2105_response();
+    bool process_2101_response();
+    bool process_2105_response();
+    bool process_odometer_response();
+    bool process_dtc_response();
 };

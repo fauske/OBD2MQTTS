@@ -2,6 +2,7 @@
 #include "config.h"
 #include "serial_diagnostics.h"
 #include <Preferences.h>
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -119,6 +120,7 @@ void ModemClient::update() {
             do_connect_mqtt();
             break;
         case State::READY:
+            update_gnss_state();
             if (!_mqtt_client.connected()) {
                 _state = State::CONNECTING_MQTT;
                 _last_mqtt_attempt_ms = 0;
@@ -130,6 +132,127 @@ void ModemClient::update() {
         default:
             break;
     }
+}
+
+void ModemClient::update_gnss_state() {
+    if (_gnss_requested == _gnss_enabled ||
+        millis() - _last_gnss_command_ms < 5000) {
+        return;
+    }
+    _last_gnss_command_ms = millis();
+
+    const bool command_succeeded = _gnss_requested
+        ? _modem.enableGPS()
+        : _modem.disableGPS();
+    if (!command_succeeded) {
+        SERIAL_DIAG_PRINTF("[GNSS] Could not %s GNSS\n",
+                           _gnss_requested ? "enable" : "disable");
+        return;
+    }
+
+    _gnss_enabled = _gnss_requested;
+    if (_gnss_enabled) {
+        _gnss_enabled_ms = millis();
+        _gnss_has_fix = false;
+        _gnss_ttff_ms = 0;
+        SERIAL_DIAG_PRINTF("[GNSS] Receiver enabled\n");
+    } else {
+        SERIAL_DIAG_PRINTF("[GNSS] Receiver disabled\n");
+    }
+}
+
+bool ModemClient::read_gnss(GnssData &data) {
+    if (!_gnss_enabled) return false;
+
+    float latitude = 0.0f;
+    float longitude = 0.0f;
+    float speed_knots = 0.0f;
+    float altitude_m = 0.0f;
+    float hdop = 0.0f;
+    int satellites_view = 0;
+    int satellites_used = 0;
+    int year = 0;
+    int month = 0;
+    int day = 0;
+    int hour = 0;
+    int minute = 0;
+    int second = 0;
+
+    if (!_modem.getGPS(&latitude, &longitude, &speed_knots, &altitude_m,
+                       &satellites_view, &satellites_used, &hdop,
+                       &year, &month, &day, &hour, &minute, &second)) {
+        return false;
+    }
+    if (!isfinite(latitude) || !isfinite(longitude) || !isfinite(altitude_m) ||
+        !isfinite(hdop) || latitude < -90.0f || latitude > 90.0f ||
+        longitude < -180.0f || longitude > 180.0f || satellites_used < 4 ||
+        hdop <= 0.0f || hdop > 5.0f) {
+        return false;
+    }
+
+    data.lat = latitude;
+    data.lon = longitude;
+    data.alt_m = altitude_m;
+    data.speed_kph = speed_knots * 1.852f;
+    data.hdop = hdop;
+    data.sats_view = static_cast<uint8_t>(satellites_view);
+    data.sats_used = static_cast<uint8_t>(satellites_used);
+    data.last_update_ms = millis();
+    data.valid = true;
+
+    if (!_gnss_has_fix) {
+        _gnss_ttff_ms = data.last_update_ms - _gnss_enabled_ms;
+        _gnss_has_fix = true;
+    }
+    data.ttff_ms = _gnss_ttff_ms;
+
+    snprintf(data.utc, sizeof(data.utc), "%04d-%02d-%02dT%02d:%02d:%02dZ",
+             year, month, day, hour, minute, second);
+    return true;
+}
+
+bool ModemClient::publish_gnss(const GnssData &gnss) {
+    if (!_mqtt_client.connected() || !gnss.valid) return false;
+
+    JsonDocument doc;
+    doc["uptime_ms"] = millis();
+    doc["lat"] = gnss.lat;
+    doc["lon"] = gnss.lon;
+    doc["alt_m"] = gnss.alt_m;
+    doc["speed_kph"] = gnss.speed_kph;
+    doc["hdop"] = gnss.hdop;
+    doc["sats_view"] = gnss.sats_view;
+    doc["sats_used"] = gnss.sats_used;
+    doc["ttff_ms"] = gnss.ttff_ms;
+    doc["utc"] = gnss.utc;
+
+    char payload[256];
+    const size_t length = serializeJson(doc, payload, sizeof(payload));
+    if (length == 0) return false;
+
+    return _mqtt_client.publish(MQTT_TOPIC_GNSS, payload, false);
+}
+
+bool ModemClient::publish_trip(const TripData &trip) {
+    if (!_mqtt_client.connected()) return false;
+
+    JsonDocument doc;
+    doc["uptime_ms"] = millis();
+    doc["odo_valid"] = trip.odo_valid;
+    if (trip.odo_valid) {
+        doc["odometer_km"] = trip.odometer_km;
+    }
+    doc["dtc_valid"] = trip.dtc_valid;
+    JsonArray codes = doc["dtc"].to<JsonArray>();
+    for (uint8_t index = 0; index < trip.dtc_count; ++index) {
+        codes.add(trip.dtc[index]);
+    }
+
+    char payload[256];
+    const size_t length = serializeJson(doc, payload, sizeof(payload));
+    if (length == 0) return false;
+
+    return _mqtt_client.publish(MQTT_TOPIC_TRIP, payload, false);
 }
 
 void ModemClient::do_init() {
@@ -346,16 +469,26 @@ void ModemClient::report_error(const char *message) {
 bool ModemClient::publish_telemetry(const BmsData &bms) {
     if (!_mqtt_client.connected()) return false;
 
-    DynamicJsonDocument doc(256);
-    doc["ts"] = millis();
+    JsonDocument doc;
+    doc["uptime_ms"] = millis();
     doc["soc_bms"] = bms.soc_bms;
     doc["soc_display"] = bms.soc_display;
     doc["pack_v"] = bms.pack_v;
     doc["pack_a"] = bms.pack_a;
     doc["aux_v"] = bms.aux_v;
+    doc["cell_v_max"] = bms.cell_v_max;
+    doc["cell_v_min"] = bms.cell_v_min;
+    doc["cell_max_no"] = bms.cell_max_no;
+    doc["cell_min_no"] = bms.cell_min_no;
+    doc["temp_max"] = bms.temp_max;
+    doc["temp_min"] = bms.temp_min;
+    doc["temp_inlet"] = bms.temp_inlet;
+    doc["soh"] = bms.soh;
+    doc["avail_chg_kw"] = bms.avail_chg_kw;
+    doc["avail_dis_kw"] = bms.avail_dis_kw;
     doc["charging"] = bms.charging;
 
-    char payload[256];
+    char payload[512];
     size_t n = serializeJson(doc, payload, sizeof(payload));
     if (n == 0) return false;
 
@@ -365,25 +498,32 @@ bool ModemClient::publish_telemetry(const BmsData &bms) {
 bool ModemClient::publish_power(const PowerData &power) {
     if (!_mqtt_client.connected()) return false;
 
-    DynamicJsonDocument doc(256);
-    doc["ts"] = millis();
+    JsonDocument doc;
+    doc["uptime_ms"] = millis();
     doc["car_12v"] = power.car_12v;
     doc["board_v"] = power.board_v;
+    doc["vbus_v"] = power.vbus_v;
+    doc["vsys_v"] = power.vsys_v;
+    doc["battery_percent"] = power.battery_percent;
+    doc["battery_present"] = power.battery_present;
+    doc["charging"] = power.charging;
+    doc["ts_adc_raw"] = power.ts_adc_raw;
 
-    char payload[256];
+    char payload[384];
     size_t n = serializeJson(doc, payload, sizeof(payload));
     if (n == 0) return false;
 
-    return _mqtt_client.publish(MQTT_TOPIC_STATUS, payload, false);
+    return _mqtt_client.publish(MQTT_TOPIC_POWER, payload, false);
 }
 
 bool ModemClient::publish_status(const SystemStatus &status) {
     if (!_mqtt_client.connected()) return false;
 
-    DynamicJsonDocument doc(256);
-    doc["ts"] = millis();
+    JsonDocument doc;
+    doc["uptime_ms"] = millis();
     doc["ble_connected"] = status.ble_connected;
     doc["obd_ready"] = status.obd_ready;
+    doc["modem_ready"] = status.modem_ready;
     doc["mqtt_online"] = status.mqtt_online;
     doc["rssi"] = status.cell_rssi;
     doc["uptime_s"] = status.uptime_s;

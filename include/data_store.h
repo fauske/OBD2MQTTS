@@ -25,6 +25,7 @@ public:
     void set_modem_ready(bool v);
     void set_mqtt_online(bool v);
     void set_rssi(int8_t rssi);
+    void set_uptime_s(uint32_t uptime_s);
 
     SystemStatus get_status() const;
 

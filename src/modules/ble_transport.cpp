@@ -100,6 +100,19 @@ void BleTransport::update() {
         case State::READY:
             // Maintain connection, handle notifies
             break;
+        case State::DISCONNECTED:
+            if (_client) {
+                NimBLEDevice::deleteClient(_client);
+                _client = nullptr;
+            }
+            _write_char = nullptr;
+            _notify_char = nullptr;
+            _target = nullptr;
+            _scan_started_ms = millis();
+            _state = State::SCANNING;
+            NimBLEDevice::getScan()->start(0, nimble_scan_callback, false);
+            Serial.println("[BLE] Disconnected; scanning again...");
+            break;
         default:
             break;
     }

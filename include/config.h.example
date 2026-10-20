@@ -17,6 +17,9 @@
 #define MQTT_CLIENT_ID "obd2mqtts-client"
 #define MQTT_TOPIC_TELEMETRY "obd2/telemetry"
 #define MQTT_TOPIC_STATUS "obd2/status"
+#define MQTT_TOPIC_POWER "obd2/power"
+#define MQTT_TOPIC_GNSS "obd2/gnss"
+#define MQTT_TOPIC_TRIP "obd2/trip"
 #define MQTT_CA_CERT_NAME "obd2mqtts-ca.pem"
 #define CELLULAR_NTP_SERVER "pool.ntp.org"
 
@@ -30,7 +33,10 @@
 #define CELLULAR_SIM_PIN ""
 #define CHECK_INTERVAL_MS 1000
 #define REPORT_INTERVAL_MS 5000
+#define GNSS_POLL_INTERVAL_MS 60000
 
-// Keep 0 until an NTC is physically installed in place of AXP2101 R27.
-// Set to 1 only after verifying the thermistor and TS wiring on the board.
+// Set to 1 only after a suitable 10k NTC replaces R27 and TS wiring is verified.
 #define AXP2101_NTC_INSTALLED 0
+#define AXP2101_ENABLE_BATTERY_CHARGING 0
+#define AXP2101_NTC_PROTECTION_VERIFIED 0
+#define AXP2101_ALLOW_UNVERIFIED_BENCH_CHARGING 0

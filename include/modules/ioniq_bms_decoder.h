@@ -8,7 +8,7 @@
 // ============================================================================
 // Reference: Ioniq 2016-2022 (both PHEV and BEV)
 // Communication: ELM327 -> CAN ID 0x7DF -> BMS ECU 0x7E8
-// Responses: 0x62 (PID response marker)
+// Responses: 0x61 (positive response to service 0x21)
 
 class IoniqBmsDecoder {
 public:

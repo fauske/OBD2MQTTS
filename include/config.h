@@ -20,6 +20,9 @@
 #define MQTT_CLIENT_ID "obd2mqtts-client"
 #define MQTT_TOPIC_TELEMETRY "obd2/telemetry"
 #define MQTT_TOPIC_STATUS "obd2/status"
+#define MQTT_TOPIC_POWER "obd2/power"
+#define MQTT_TOPIC_GNSS "obd2/gnss"
+#define MQTT_TOPIC_TRIP "obd2/trip"
 #define MQTT_CA_CERT_NAME "obd2mqtts-ca.pem"
 #define CELLULAR_NTP_SERVER "pool.ntp.org"
 
@@ -59,6 +62,19 @@
 #define AXP2101_I2C_SCL_PIN   7      // LilyGO T-SIM7080G-S3 PMU I2C Clock
 #define AXP2101_IRQ_PIN       6      // Interrupt output
 
+#ifndef AXP2101_NTC_INSTALLED
+#define AXP2101_NTC_INSTALLED 0
+#endif
+#ifndef AXP2101_ENABLE_BATTERY_CHARGING
+#define AXP2101_ENABLE_BATTERY_CHARGING 0
+#endif
+#ifndef AXP2101_NTC_PROTECTION_VERIFIED
+#define AXP2101_NTC_PROTECTION_VERIFIED 0
+#endif
+#ifndef AXP2101_ALLOW_UNVERIFIED_BENCH_CHARGING
+#define AXP2101_ALLOW_UNVERIFIED_BENCH_CHARGING 0
+#endif
+
 // SIM7080 controls from LilyGO's official T-SIM7080G-S3 utilities.h
 #define SIM7080_PWRKEY_PIN    41
 #define SIM7080_DTR_PIN       42
@@ -66,10 +82,12 @@
 
 // ADC Input for Car 12V Measurement
 // Available ADC1 pins (not used by camera/SD): 9, 19, 20, etc.
-// Use voltage divider (5.1k + 10k recommended for 0-5V range)
+// Use a suitable external voltage divider for the vehicle supply.
 #define ADC_12V_PIN           9      // GPIO9 = ADC1_CHANNEL_8
 #define ADC_12V_CHANNEL       ADC1_CHANNEL_8
-#define ADC_12V_DIVIDER       5.278f // (10k + 5.1k) / 5.1k
+#ifndef ADC_12V_DIVIDER
+#define ADC_12V_DIVIDER       5.278f // Override with local measured divider ratio
+#endif
 
 // ============================================================================
 // POLLING INTERVALS
@@ -80,6 +98,7 @@
 #define POLL_INTERVAL_MINIMAL_MS     3600000 // Parked: 60 min polling
 #define REPORT_INTERVAL_MS           2500    // MQTT publish cadence (active)
 #define STATUS_INTERVAL_MS           30000   // Status updates
+#define GNSS_POLL_INTERVAL_MS        60000   // GNSS fix while driving
 
 // ============================================================================
 // POWER & SLEEP SETTINGS

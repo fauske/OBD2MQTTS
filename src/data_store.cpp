@@ -96,6 +96,12 @@ void DataStore::set_rssi(int8_t rssi) {
     taskEXIT_CRITICAL(&_mux);
 }
 
+void DataStore::set_uptime_s(uint32_t uptime_s) {
+    taskENTER_CRITICAL(&_mux);
+    _status.uptime_s = uptime_s;
+    taskEXIT_CRITICAL(&_mux);
+}
+
 SystemStatus DataStore::get_status() const {
     SystemStatus out;
     taskENTER_CRITICAL(&_mux);

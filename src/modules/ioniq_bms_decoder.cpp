@@ -10,8 +10,8 @@
 //   PID 2105: Battery Thermal & Health (variable length)
 //
 // Format from ELM327:
-//   Response: "62 01 <40 bytes of data> >"
-//   where "62" = positive response, "01" = PID number
+//   Response: "61 01 <data> >"
+//   where "61" = positive response to service 0x21, "01" = local identifier
 
 bool IoniqBmsDecoder::parse_hex_response(const char *response,
                                          uint8_t *out, size_t &out_len) {
